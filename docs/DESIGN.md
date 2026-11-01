@@ -1,0 +1,276 @@
+# Implementation Design (refines docs/SPEC.html)
+
+Written Sun Nov 1 before any code. `docs/SPEC.html` is still the source of truth for scope;
+this file pins down the implementation decisions the spec leaves open, so build sessions
+can move fast without re-deciding. Items marked **[ASK ALIX]** change the demo or README
+story and need a human decision.
+
+---
+
+## 0. Decisions that need Alix (answer before/at start of build)
+
+| # | Question | Recommendation |
+|---|----------|----------------|
+| D1 | Product name: spec says "Warmpath", repo is `Tessera`. | **Tessera.** A *tessera hospitalis* was a token split between host and guest so either side could later prove the relationship — exactly "a hub's trust capital, kept with provenance". Better story than a descriptive name, and the repo already uses it. |
+| D2 | Network access: this cloud session cannot reach `api.meta.ai` (proxy 403). | Add `api.meta.ai` to the environment's allowed domains, or run M0 and any live LLM work locally. Everything else (seed, graph, scheduler, frontend) builds here. |
+| D3 | Fact store for eval: extract facts with Spark over all seeded interactions, or seed facts directly from the generator? | **Extract with Spark** (one batch run, cached to a committed JSONL). Otherwise retrieval-mode eval is circular (see §3). Fallback if credits/time run out: seed directly and say so in the README. |
+| D4 | M8 CRM write-back. | Replace with **Salesforce-shaped CSV export** (≈1 h, defensible, resume-relevant). Real API write-back stays stretch. |
+| D5 | Use Muse Code for any part of the build? | Only if it is actually used for something real (e.g. generating the synthetic-data templates). Otherwise do not mention it. |
+
+---
+
+## 1. What makes this project credible (design principles)
+
+1. **Facts live in text, not columns.** Investor stances, constraints and thesis changes exist
+   only inside interaction text (emails, meeting notes, voice memos). The planner never reads
+   the generator's latent truth. This is what makes "memory" a real capability and the eval
+   honest.
+2. **Every claim is cited and the citation is checked.** LLM outputs return `fact_id`s;
+   the backend validates that each id exists and belongs to that person. Invalid citations are
+   dropped; an exclusion without a valid citation is downgraded to a flag.
+3. **Deterministic around the LLM.** Prefiltering, fatigue, warmth, scheduling and metrics
+   are plain Python. The LLM does extraction, judgment and drafting only. Easier to test,
+   cheaper, and every number on screen is explainable.
+4. **Record/replay for every LLM call.** The demo video and eval reruns never depend on live
+   API latency. Replay only returns responses that were actually recorded.
+5. **Human confirms every write and every send.** Capture produces diffs; drafts go to a mock
+   outbox with status `draft`.
+
+---
+
+## 2. Synthetic world
+
+### 2.1 Clock
+- Synthetic "today": **2026-11-02**. History: 2025-05-01 → 2026-11-01 (18 months).
+- Demo visit window: **Tue Nov 10 → Thu Nov 19, 2026** = 8 weekdays × 3 slots = 24 slots,
+  enough for 10–15 meetings.
+- All "N months ago" logic uses the synthetic clock (`backend/clock.py`), never `date.today()`.
+
+### 2.2 Generation (`backend/seed/`) — deterministic, seed `42`
+Two layers:
+
+| Layer | How | Volume |
+|-------|-----|--------|
+| Latent truth | Python only. Each investor has a hidden **stance timeline** (sectors, stages, B2B/B2C, geographies, leading vs following, active/paused) with change points. | ~300 people |
+| Observable exhaust | Interactions rendered from the latent timeline via **templates with variation** (email, meeting note, event note, intro thread). Bland majority, informative minority. | ~1,500 interactions |
+| Rich exhaust | ~60 hand-curated/LLM-written texts for needles and demo cast, stored as fixtures in `data/fixtures/` (written once, committed). | ~60 |
+
+Profiles (`Person` rows) carry only "public-ish" attributes (sector, stage_focus, check_size,
+market) and are deliberately **stale** for needle investors — that is the trap a naive
+matcher falls into.
+
+### 2.3 Needles (~30), in both directions
+A system that just "excludes anyone with a negative fact" must fail, so needles cut both ways:
+
+| Type | Example | Correct behaviour |
+|------|---------|-------------------|
+| Stance narrowed | Profile: fintech, B2C+B2B. Meeting note 7 months ago: "we stopped doing B2C". | Exclude a B2C founder; still fine for B2B. |
+| Stance widened (supersession) | 2025: "not investing in Africa". 2026: "we just opened an Africa allocation". | **Include**, show both facts, newest wins. |
+| Temporary constraint | "on sabbatical until January" | Exclude for this window only. |
+| Role constraint | "we only follow, never lead now" | Exclude for "needs a lead", fine as follower. |
+| Relationship | "please don't route anything from X's portfolio to me" | Exclude specific founders. |
+
+### 2.4 Ground truth
+- Generated by an **oracle** that reads latent truth (which the system never sees), then the
+  demo visit plus a sample of the 20 visits are reviewed by hand.
+- `data/ground_truth.json`: per visit → ranked acceptable targets per need, plus
+  `must_exclude: [{person_id, reason, needle_id}]`.
+- Over-cap investors: ~5 investors get 2–3 synthetic `Intro` rows with `asked_on` in the last 30 days.
+
+### 2.5 Demo cast (names generated, checked for collisions with real orgs before recording)
+| Role | Purpose in video |
+|------|------------------|
+| Founder F — B2B payments, Lagos, raising Series A | The visit |
+| Investor "Greyed" | Best paper fit, asked 3× this month → shown greyed with reason |
+| Investor "Needle" | Profile fits; 4 months ago said "not leading rounds outside the US this fund cycle" → excluded with citation |
+| Investor "Widened" | Said "no Africa" in 2025, reversed in 2026 → included, both facts shown |
+| Investor "Captured" | **Does not exist before the demo.** Created live from business card + email + voice memo with fact "only leads seed/A, no B2C since 2026" → then appears in F's candidate list. Closes the capture → plan loop on camera. |
+| Operator "Payments" | Ex-payments lead, reachable through a warm connector path → scheduled early in the week |
+
+---
+
+## 3. Memory and the eval honesty problem
+
+If facts are seeded directly from the generator, retrieval mode reads ground truth and the
+needle eval measures nothing. Therefore:
+
+- `make extract`: run Spark capture extraction over all seeded interactions (batched,
+  concurrency ~8, cached). Output `data/extracted/facts.jsonl`, committed. `make seed` loads it.
+  Rough cost: 1,500 short calls on Spark — small; log actual cost in `eval/cost_log.jsonl`.
+- **Mode A (retrieval):** facts for the candidate (filtered by subject + tag/keyword
+  overlap with the need), newest non-superseded first, top-k=12 → Spark.
+- **Mode B (full history):** the candidate's raw interactions (chronological, ids inline)
+  → Wonder, with a stable cached prefix (system prompt + histories) so repeated planning
+  hits prompt cache.
+- Both modes return the same schema, so planner and eval swap them with one flag.
+
+Supersession at capture time: the extraction prompt includes the subject's existing facts
+and may return `supersedes_fact_id`. The accept step sets `superseded_by` on the old fact.
+
+---
+
+## 4. Backend
+
+### 4.1 Layout
+```
+backend/
+  app.py          FastAPI routes only
+  db.py models.py SQLModel tables (spec §6) + engine
+  clock.py        synthetic today
+  llm.py          the only module that talks to Meta Model API
+  capture.py      normalize input → extract → resolve entities → ProposedDiffs
+  resolve.py      entity resolution (rapidfuzz)
+  memory.py       recall(person_ids, question, mode) → stance + citations
+  graph.py        effective strength, path warmth
+  planner.py      needs parsing, prefilter, fatigue gate, fit, score
+  scheduler.py    greedy slotting
+  drafts.py       double opt-in asks, founder briefs
+  outcomes.py     status/outcome updates, funnel, outcome prior
+  export.py       Salesforce-shaped CSV (D4)
+  seed/           generator, templates, oracle
+eval/             run_eval.py, baseline.py, results.md
+data/             fixtures/, extracted/, llm_cache/, demo_inputs/, tessera.db (gitignored)
+frontend/
+```
+
+### 4.2 `llm.py` contract
+```python
+complete(task: str, messages: list, schema: type[BaseModel] | None, model_role: "fast"|"reason") -> BaseModel | str
+transcribe(audio_path) -> str
+```
+- Model ids from env (`MODEL_FAST`, `MODEL_REASON`, `MODEL_TRANSCRIBE`, `MODEL_IMAGE`).
+- Structured output: try `response_format={"type":"json_schema",...}`; if M0 shows it is
+  unsupported, fall back to JSON mode / tool call + Pydantic validation + one repair retry.
+- `LLM_MODE=live|record|replay`. Cache key = sha256(model, messages, schema name).
+  Cache in `data/llm_cache/<task>/<key>.json`. `replay` raises on a miss (never invents).
+- Every call appends `{task, model, latency_ms, in_tok, out_tok, cached_tok}` to
+  `data/llm_log.jsonl` → feeds cost/latency columns in eval.
+- PDF: try native file input if M0 confirms it; otherwise `pypdf` text extraction first.
+
+### 4.3 Capture flow
+```
+input (image | pdf | email text | audio)
+  → normalize (audio→transcribe, pdf→text or native, image→base64)
+  → Interaction row (raw_ref, type, date)
+  → Spark extract → {people[], relationships[], facts[] (+supersedes_fact_id), confidence}
+  → resolve: rapidfuzz(name)+org match  ≥92 link | 75–92 ambiguous (diff carries options) | <75 new
+  → ProposedDiff rows (pending)
+accept → apply in one transaction; every Fact/edge gets source_interaction_id
+```
+
+### 4.4 Graph math (plain Python, unit-tested)
+- `eff(edge) = base_strength × 0.5 ** (days_since_last_touch / 90)` (range 0–5).
+- `warmth(target) = max( eff(staff→target)/5 , max_c eff(staff→c)/5 × eff(c→target)/5 )`,
+  over all staff; returns the best path for display ("via Connector C, last touch 3 weeks ago").
+- `asks_30d(investor)` = count of Intro rows with `asked_on` in the last 30 days. Cap default 2.
+
+### 4.5 Planner pipeline
+1. **Parse needs** (Spark, structured): `[{role: lead_investor|investor|operator|advisor, sector, stage, notes}]`.
+2. **Prefilter** (deterministic): kind, sector/tag overlap, stage — ≤25 candidates per need.
+3. **Fatigue gate** (deterministic): `asks_30d ≥ cap` → status `greyed`, reason "asked 3× in last 30 days". Kept in the response so the UI can show it.
+4. **Fit** (one Wonder call per need, all candidates batched): per candidate
+   `{fit 0–1, reason, cited_fact_ids, exclude: bool, exclude_fact_id}` → citation validation.
+5. **Score** = `fit × (0.4 + 0.6 × warmth) × outcome_prior` where
+   `outcome_prior ∈ [0.9, 1.1]` from historic second-meeting rate for (need role, sector).
+6. Top 3–5 per need → `Intro(status=proposed)`.
+
+### 4.6 Scheduler (greedy)
+- Slots: weekdays 10:00, 13:30, 16:00; respect `max_meetings_per_day`.
+- Order: operators/advisors fill earliest days; lead investors after day 3 (founder has
+  sharpened the pitch); investors with the same sector cluster within 2 days.
+- Output is *tentative* until the intro is accepted; UI animates slots filling in order.
+- ILP (OR-Tools) only if ahead of schedule.
+
+### 4.7 Drafts
+- **Opt-in ask** (Spark): three lines, staff voice, cites why this person (from facts), ends
+  with an easy yes/no. Stored in mock outbox, never sent.
+- **Founder brief** (Wonder, one page): who they are, what they care about now (with dates),
+  what they said before, 3 questions to ask, what to avoid.
+
+### 4.8 REST endpoints
+```
+POST /capture                     multipart file or text + type → {interaction, diffs}
+GET  /diffs?status=pending
+POST /diffs/{id}/accept           optional edited payload
+POST /diffs/{id}/reject
+GET  /graph                       nodes (fatigue flag) + links (eff strength)
+GET  /people/{id}                 profile, facts with sources, interactions
+POST /recall                      {person_id, question, mode} → answer + citations
+POST /visits                      founder_id, needs text, window
+POST /visits/{id}/plan?mode=A|B   candidates (incl. greyed/excluded), schedule
+GET  /visits/{id}/drafts
+POST /intros/{id}/status          proposed→asked→accepted|declined→scheduled→met
+POST /intros/{id}/outcome         second_meeting|term_sheet|hire|dead
+GET  /metrics/funnel?visit_id=
+GET  /export/salesforce           zip of CSVs (D4)
+```
+
+---
+
+## 5. Frontend
+
+Four views, one top nav. React + TS + react-force-graph-2d, plain CSS variables for dark mode.
+
+| View | Must show on camera |
+|------|---------------------|
+| Graph | ~300 nodes coloured by kind; edge width/opacity = eff strength; greyed fatigued investors; click → side panel of facts with source chips (click chip → raw interaction). New node/edge animate in after a capture accept. |
+| Inbox | Drop zone (image/pdf/audio/email paste); pending diff cards with confidence; accept/reject/edit; ambiguous match shows options. |
+| Visit Planner | Form → candidate list grouped by need (score, warmth path, reason, cited fact chips; greyed and excluded rows visible with reason) → 8-day calendar grid filling slot by slot → tabs: Asks / Briefs. |
+| Dashboard | Funnel asked → accepted → met → second meeting, per visit and overall; updates after one-click outcomes. |
+
+---
+
+## 6. Eval (`eval/run_eval.py` → `eval/results.md`)
+
+| Metric | Definition | Systems compared |
+|--------|-----------|------------------|
+| precision@3 | fraction of top-3 per need that are in the oracle's acceptable set, averaged over 20 visits | Baseline (attribute filter + TF-IDF similarity over profile text; no facts, no fatigue) vs Tessera mode A vs mode B |
+| needle-respect | fraction of needle cases where the system excludes/flags (narrowing) or includes (widening) correctly **with a valid citation to the needle's interaction** | mode A vs mode B |
+| false-exclusion rate | excluded candidates the oracle considered fine | mode A vs mode B |
+| cost / latency | from `data/llm_log.jsonl` | per visit, per mode |
+
+Report n (20 visits, ~30 needles is small), failures and examples. Baseline uses TF-IDF, not
+embeddings, unless M0 shows an embeddings endpoint; README says which.
+
+---
+
+## 7. Salesforce mapping (for README + export)
+
+| Tessera | Salesforce |
+|---------|-----------|
+| Person (founder/investor/operator) | Contact (+ Account for org) |
+| Relationship | custom `Relationship__c` (Contact A, Contact B, Strength__c, Last_Touch__c) |
+| Interaction | Task / Activity |
+| Fact | custom `Network_Fact__c` (Subject Contact, Statement, Stated_On__c, Source Activity, Superseded_By__c) |
+| Visit | custom `Founder_Visit__c` |
+| Intro | custom `Intro__c` (Visit, Target, Connector, Status, Outcome, Asked_On__c) |
+
+Positioning: the CRM stays the system of record; Tessera is the capture + recall + planning
+layer that writes into it.
+
+---
+
+## 8. Build order (revised from spec §8, starting Sun Nov 1 evening)
+
+| When | Build | Exit check |
+|------|-------|-----------|
+| Sun night | Scaffold, `llm.py` with record/replay, M0 smoke (needs D2), seed generator latent + templates, `make seed` | `make seed` deterministic; M0 results in STATUS |
+| Mon AM | Capture pipeline + 3 demo inputs; `make extract` batch | Demo inputs → correct pending diffs; facts.jsonl committed |
+| Mon PM | Graph math, planner A, scheduler, drafts (API only) | Demo visit → cited candidates, greyed + excluded, schedule via curl |
+| Tue AM | Frontend 4 views wired to API | Full storyline clickable in browser |
+| Tue PM | Mode B, outcomes + prior, eval + baseline, CSV export, README draft | `eval/results.md` exists |
+| Wed | Record demo in replay mode, GIF, README polish, submit by afternoon | Submitted |
+
+Cut order (unchanged from spec, with additions): CSV export → ILP → outcome prior →
+mode A/B comparison (keep A in product, B only in eval if needed) → dashboard polish.
+Never cut: capture demo, cited candidates, greyed investor, fact-based exclusion, calendar fill.
+
+## 9. Risks
+
+| Risk | Mitigation |
+|------|-----------|
+| Model ids / audio / PDF / structured-output shapes differ from assumptions | M0 first; `llm.py` isolates it; pypdf + JSON-mode fallbacks designed in |
+| Wonder too slow for live planning on camera | Replay cache; batch candidates per need in one call |
+| LLM cites wrong facts | Server-side citation validation (§1.2) |
+| Generated names collide with real people/orgs | Name pools from synthetic combinations + manual check of demo cast; "synthetic" badge in UI |
+| Eval looks self-fulfilling | Latent truth hidden from system, facts extracted by LLM, baseline reported, failures shown |

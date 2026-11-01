@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warmpath Spec</title>
+<style>
+:root{--bg:#f7f7f5;--fg:#1d2124;--muted:#5d666b;--line:#dcdfe1;--accent:#1f6b5f;--soft:#e6f0ee;--warn:#8f5a14;--warnsoft:#f7eedf}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#141819;--fg:#e3e8ea;--muted:#9aa5aa;--line:#2c3539;--accent:#62c1b2;--soft:#1c3330;--warn:#e0a85c;--warnsoft:#33291b}}
+:root[data-theme="dark"]{--bg:#141819;--fg:#e3e8ea;--muted:#9aa5aa;--line:#2c3539;--accent:#62c1b2;--soft:#1c3330;--warn:#e0a85c;--warnsoft:#33291b}
+body{background:var(--bg);color:var(--fg);font:15px/1.65 -apple-system,"Helvetica Neue",Arial,sans-serif;margin:0;padding:0 16px 64px}
+main{max-width:820px;margin:0 auto}
+h1{font-size:28px;margin:40px 0 4px}
+h2{font-size:20px;margin:40px 0 10px;padding-top:12px;border-top:1px solid var(--line)}
+h3{font-size:16px;margin:22px 0 6px}
+p.lede{color:var(--muted);margin:0 0 20px}
+code{font:13px ui-monospace,Menlo,monospace;background:var(--soft);padding:1px 4px;border-radius:3px}
+pre{font:13px/1.5 ui-monospace,Menlo,monospace;background:var(--soft);padding:12px;overflow-x:auto;border-radius:4px}
+table{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0}
+th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+th{background:var(--soft)}
+.box{border-left:3px solid var(--accent);background:var(--soft);padding:10px 14px;margin:12px 0}
+.warn{border-left:3px solid var(--warn);background:var(--warnsoft);padding:10px 14px;margin:12px 0}
+.tag{display:inline-block;font-size:12px;font-weight:600;padding:1px 6px;border-radius:3px;background:var(--accent);color:var(--bg);margin-right:6px}
+.tbl{overflow-x:auto}
+li{margin:3px 0}
+</style>
+</head>
+<body>
+<main>
+
+<h1>Warmpath — Build Spec</h1>
+<p class="lede">Working name. Meta Global AI Developer Hackathon (Cerebral Valley), Indie track. Deadline Wed Nov 4, 2026, 9:00 PM EST. Spec written Sun Nov 1 from Alix's design discussions; update the Open Questions section after the Mon Nov 2 user conversation.</p>
+
+<h2 id="context">1. Context and goal</h2>
+<ul>
+<li><b>Hackathon:</b> remote, very large field (up to ~20,000 entrants), judged Nov 4–8. Indie track values creativity, technical ambition, and whether it works. First-pass judging will likely look at the first 30 seconds of the video and the README. Theme fit: "Build for Your World" — Alix does founder–investor connection work at a university venture center.</li>
+<li><b>Second purpose:</b> a credible prototype for a Network Intelligence internship (a hub that connects founders from emerging markets to Bay Area investors, operators and AI builders, with a Salesforce-based network model). The product must stay generic — no real organization's name or branding.</li>
+<li><b>Resume purpose:</b> every claim must be true and defensible.</li>
+</ul>
+
+<h2 id="problem">2. Problem</h2>
+<p>The primary user is <b>hub staff</b>: people whose organization's product is its network. Their network lives in a few heads, inboxes and spreadsheets. Four concrete pains:</p>
+<ol>
+<li><b>Capture.</b> Nobody fills in the CRM after a coffee chat. Data starts rotting on day one.</li>
+<li><b>Recall.</b> Who knows whom, what an investor said last time ("we stopped doing B2C") depends on memory. When staff leave, that part of the network leaves with them.</li>
+<li><b>Execution.</b> Intro emails, double opt-in, scheduling and follow-up are repetitive manual work. A visiting founder may need 10–15 meetings coordinated within one week.</li>
+<li><b>Proving value.</b> A nonprofit hub has to show its board and funders that connections produced funding and hires. Without recorded outcomes this cannot be shown.</li>
+</ol>
+<p>Capture, recall and execution are the core. Attention budgeting is a visible constraint, not the headline: at single-hub scale staff can allocate by judgment; it matters more when several hubs share the same investors.</p>
+
+<h3>Two-sided attention (design principle)</h3>
+<ul>
+<li><b>Investor attention is a constraint.</b> It is the hub's trust capital. Each ask spends credibility; it recovers slowly. Model: rolling 30-day ask count per investor with a cap (default 2). Over cap → excluded or shown greyed with reason.</li>
+<li><b>Founder attention is a cost in the objective.</b> Visiting founders have a hard time window (e.g. 10 days in the Bay Area) and limited meetings per day. A bad-fit meeting costs prep time, meeting time and morale. The planner maximizes expected value per founder-hour within the window.</li>
+</ul>
+
+<h2 id="users">3. Users and how they use it</h2>
+<div class="box">Principle: founders and investors learn nothing new and never log in. Staff change as few habits as possible.</div>
+<div class="tbl"><table>
+<tr><th>User</th><th>Interaction</th></tr>
+<tr><td>Staff — capture</td><td>Forward an email, paste notes, drop a business-card photo / event screenshot / deck PDF, or upload a voice memo. System proposes a diff (new person, new relationship, new fact, updated strength). Staff confirms or edits each item.</td></tr>
+<tr><td>Staff — visit planning</td><td>Enter founder, needs, Bay Area dates. System returns candidates with reasons and cited facts, a draft schedule, double opt-in ask emails, and per-meeting founder briefs. Staff edits and confirms.</td></tr>
+<tr><td>Investor / operator</td><td>Receives an ordinary email from staff they know, with three lines of context. Replies yes/no. Never sees the product.</td></tr>
+<tr><td>Founder</td><td>Receives a schedule and a brief per meeting: what this person cares about, what they said before, what to ask.</td></tr>
+<tr><td>Staff — outcomes</td><td>After each meeting: one-question follow-up ("second meeting?"); staff records outcome in one click.</td></tr>
+<tr><td>Hub lead</td><td>Dashboard: asks → accepted → met → follow-up, per visit and overall.</td></tr>
+</table></div>
+<p>For the hackathon, email/calendar/CRM integrations are simulated (file upload, pasted email, mock outbox). The README explains how real deployment would connect: forwarding address or Slack bot for capture, staff's own mailbox for sending, CRM as system of record (this tool writes into it, never replaces it).</p>
+
+<h2 id="demo">4. Demo storyline — "A founder's Bay Area week"</h2>
+<p>The 2-minute video follows one workflow end to end. The first 15 seconds must show something visual happening, not a title card.</p>
+<ol>
+<li><b>Capture (0:00–0:30).</b> Drop a business-card image + a forwarded email + a 30-second voice memo. Graph view: a new node appears, an edge lights up, a fact chip ("only leads seed/A, no B2C since 2026") attaches with its source.</li>
+<li><b>Visit request (0:30–0:50).</b> "Fintech founder from Lagos, raising Series A, needs a lead + a payments operator, in SF Nov 10–19."</li>
+<li><b>Plan (0:50–1:25).</b> Candidates with reasons and citations. One investor shown greyed: "asked 3× this month." One excluded by a fact stated 4 months ago. The 10-day calendar fills: operators early, lead investors after. Double opt-in drafts and founder briefs appear.</li>
+<li><b>Outcomes (1:25–1:45).</b> Mark outcomes; dashboard funnel updates.</li>
+<li><b>Eval (1:45–2:00).</b> One slide: matching precision@3 and long-horizon memory recall numbers.</li>
+</ol>
+
+<h2 id="arch">5. Architecture and model use</h2>
+<pre>frontend (Vite React TS)
+  Graph · Inbox(capture) · Visit Planner · Dashboard
+        │ REST
+backend (FastAPI)
+  llm.py       — single adapter, OpenAI-compatible client, env-driven model IDs
+  capture.py   — multimodal input → proposed diffs
+  memory.py    — fact store with provenance + recall
+  graph.py     — relationship strength, decay, path warmth
+  planner.py   — candidate scoring
+  scheduler.py — window/day-cap scheduling
+  drafts.py    — opt-in emails, founder briefs
+  outcomes.py  — outcome records, funnel metrics
+  eval/        — synthetic benchmark + scripts
+SQLite (SQLModel)</pre>
+<div class="tbl"><table>
+<tr><th>Model (verify IDs in official docs)</th><th>Job</th><th>Why this model</th></tr>
+<tr><td><code>muse-spark-1.3</code> (or 1.2)</td><td>Capture: images, PDFs, email text → structured diffs (structured output / tool calling). Drafting emails.</td><td>Multimodal, cheap, fast, 1M context.</td></tr>
+<tr><td><code>muse-voice-transcribe-1.0</code></td><td>Voice memo → text before extraction.</td><td>Native transcription on same credential.</td></tr>
+<tr><td><code>muse-wonder-1.0</code></td><td>Recall over long interaction history; candidate reasoning; founder briefs.</td><td>Positioned for long-horizon agentic work; this is the memory showcase.</td></tr>
+<tr><td><code>muse-image-1.0</code></td><td>Generate synthetic demo inputs (fictional business cards, event screenshots).</td><td>Avoids using any real person's data in the demo.</td></tr>
+</table></div>
+<p>Base URL per third-party docs: <code>https://api.meta.ai/v1</code>, OpenAI-compatible. Confirm against the official Meta Model API docs (developer.meta.com/ai, dev.meta.ai) before integrating. Muse Wonder has no known native "memory" API — memory is our fact store plus long context. That is a design choice we explain, and test (see eval).</p>
+<p><b>Cost note:</b> Wonder is ~$4 / $20 per 1M input/output tokens, cached input much cheaper. Use prompt caching for the full-history recall mode; keep a running cost log in eval output.</p>
+
+<h2 id="data">6. Data model</h2>
+<div class="tbl"><table>
+<tr><th>Entity</th><th>Key fields</th></tr>
+<tr><td>Person</td><td>id, name, kind (founder | investor | operator | builder | staff), org, market, sector, stage_focus, check_size, tags, synthetic=true</td></tr>
+<tr><td>Relationship (edge)</td><td>from_id, to_id, base_strength (1–5), last_touch, source_interaction_ids, notes. Effective strength = base × 0.5^(days_since_touch / 90).</td></tr>
+<tr><td>Interaction</td><td>id, type (email | meeting | event | voice | card | deck), date, participants, raw_ref (file path), summary</td></tr>
+<tr><td>Fact</td><td>id, subject_person_id, statement, kind (preference | constraint | thesis | status), stated_on, source_interaction_id, superseded_by</td></tr>
+<tr><td>ProposedDiff</td><td>id, interaction_id, op (add_person | add_edge | add_fact | update_strength), payload, status (pending | accepted | rejected)</td></tr>
+<tr><td>Visit</td><td>id, founder_id, needs (text + parsed tags), window_start, window_end, max_meetings_per_day (default 3)</td></tr>
+<tr><td>Intro</td><td>id, visit_id, target_id, connector_id, reason, cited_fact_ids, status (proposed | asked | accepted | declined | scheduled | met), slot, outcome (none | second_meeting | term_sheet | hire | dead), asked_on</td></tr>
+</table></div>
+
+<h2 id="modules">7. Modules and acceptance criteria</h2>
+
+<h3><span class="tag">M0</span>API smoke test</h3>
+<p>Script that calls each model once: Spark with text, image and PDF; transcribe with a short audio file; Wonder with a long-context prompt; Image with one prompt. Record latency, token counts, structured-output support. <b>Done when</b> all four succeed or a blocking limitation is written in <code>docs/STATUS.md</code>.</p>
+
+<h3><span class="tag">M1</span>Synthetic network</h3>
+<p>~300 people (≈60 founders across Lagos, São Paulo, Jakarta, Mexico City, Nairobi, Cairo, etc.; ≈120 investors; ≈80 operators; ≈30 builders; ≈10 staff), ~1,500 interactions spread over 18 months, edges derived from interactions. Seeded and reproducible. Plant: (a) 20 visit scenarios with hand-specified ground-truth best intros, (b) ~30 "needle" facts stated early and later contradicting naive matches (e.g. an investor who stopped doing B2C), (c) a few investors already over the ask cap. <b>Done when</b> <code>make seed</code> builds the DB and ground truth file deterministically.</p>
+
+<h3><span class="tag">M2</span>Capture pipeline</h3>
+<p>Endpoint accepts image / PDF / pasted email / audio. Audio → transcribe → text. Spark returns structured ProposedDiffs with confidence; every Fact links its source Interaction. Entity resolution against existing Persons (name + org fuzzy match; ask when ambiguous). <b>Done when</b> the three demo inputs produce correct pending diffs and accepting them updates the graph.</p>
+
+<h3><span class="tag">M3</span>Memory and recall</h3>
+<p>Two recall modes behind one interface: (A) retrieval — filter Facts by subject/tags, pass top-k to Spark; (B) full history — the relevant people's full interaction history in Wonder's context, with caching. Facts can be superseded; the newest non-superseded statement wins and both are shown. <b>Done when</b> a query about a needle-fact investor returns the correct current stance with citation in both modes.</p>
+
+<h3><span class="tag">M4</span>Visit planner</h3>
+<ul>
+<li>Candidate scoring: fit (Wonder judgment over needs + profile + facts, must cite fact IDs) × path warmth (best connector path: effective strength staff→connector × connector→target, or direct) − investor fatigue (over cap → excluded with visible reason).</li>
+<li>Scheduling: fill the window respecting max meetings/day; order operators and advisors before lead investors; group similar investors within a few days. Greedy is enough; an ILP (PuLP / OR-Tools) is a stretch.</li>
+<li>Drafts: double opt-in ask to target (from staff's voice, three lines of context), and a one-page brief per meeting for the founder.</li>
+</ul>
+<p><b>Done when</b> the demo visit produces a full, sensible 10-day plan with reasons, one greyed investor, one fact-based exclusion, drafts and briefs.</p>
+
+<h3><span class="tag">M5</span>Outcomes and dashboard</h3>
+<p>One-click outcome per intro; funnel metrics per visit and overall; outcomes feed back as a small prior in fit scoring (intros of this type that produced second meetings score slightly higher). <b>Done when</b> recording outcomes visibly changes the funnel.</p>
+
+<h3><span class="tag">M6</span>Frontend</h3>
+<p>Four views: Graph (force-directed; edge width/opacity by effective strength; fatigued investors greyed; click node → facts with sources), Inbox (drop zone, pending diffs, accept/reject), Visit Planner (form → candidates → calendar grid filling → drafts/briefs tabs), Dashboard (funnel). Animations should make the demo legible, not decorative. Dark mode friendly.</p>
+
+<h3><span class="tag">M7</span>Eval</h3>
+<ul>
+<li><b>Matching:</b> precision@3 against the 20 ground-truth visits. Baseline: attribute filter + embedding similarity without facts or fatigue.</li>
+<li><b>Long-horizon memory:</b> needle-respect rate — fraction of needle cases where the system excludes or flags the investor with the correct citation. Compare retrieval mode vs full-history Wonder mode; report cost and latency for each.</li>
+<li>Output a single <code>eval/results.md</code> table. Report honestly, including where it fails.</li>
+</ul>
+
+<h3><span class="tag">M8</span>Stretch: CRM write-back</h3>
+<p>Write Persons, Relationships and Intros into a free HubSpot or Salesforce developer account via API (custom objects for Relationship and Intro). Only if M0–M7 are done by Tue evening.</p>
+
+<h2 id="schedule">8. Schedule</h2>
+<div class="tbl"><table>
+<tr><th>Day</th><th>Build</th><th>End-of-day check</th></tr>
+<tr><td>Sun Nov 1</td><td>Repo scaffold, M0, M1, start M2</td><td>Seeded DB; all models callable; one input → pending diffs</td></tr>
+<tr><td>Mon Nov 2</td><td>Finish M2, M3, M4 core. (Alix has a 15-min call 4:40 PM; may update Open Questions after.)</td><td>Demo visit produces a ranked, cited candidate list and a schedule via API</td></tr>
+<tr><td>Tue Nov 3</td><td>M6 frontend, M5, M7 eval, README draft. M8 only if ahead.</td><td>Full demo storyline runs in the browser; eval table exists</td></tr>
+<tr><td>Wed Nov 4</td><td>Bug fixes, README polish, record video, submit by afternoon</td><td>Submitted</td></tr>
+</table></div>
+<div class="warn">Cut order if behind: M8 → ILP scheduling → outcome prior in scoring → recall mode A/B comparison (keep one mode) → dashboard polish. Never cut: capture demo, cited candidates, greyed investor, calendar fill.</div>
+
+<h2 id="readme">9. README requirements</h2>
+<ul>
+<li>One-sentence pitch; 20-second GIF of the capture → graph moment at the top.</li>
+<li>Problem (the four pains), users, the two-sided attention principle.</li>
+<li>Architecture diagram; table of which Meta model does what and why.</li>
+<li>Eval results with method and limitations.</li>
+<li>Data note: fully synthetic; no scraping; how real deployment would connect to email and CRM.</li>
+<li>Only claims the code supports. Mention Muse Code only if it was actually used.</li>
+</ul>
+
+<h2 id="out">10. Out of scope</h2>
+<ul>
+<li>Real email/calendar OAuth, real sending, multi-tenant auth.</li>
+<li>Scraping LinkedIn or any public profiles.</li>
+<li>Full stable-matching theory implementation (mention as future work).</li>
+</ul>
+
+<h2 id="open">11. Open questions (update after Mon Nov 2)</h2>
+<ul>
+<li>Where is a real hub's network data today, and in what state — already in the CRM, or in heads and spreadsheets? (Decides whether capture or execution leads the story.)</li>
+<li>How does a hub currently decide whom a visiting founder meets, and in what order?</li>
+<li>How is a "successful connection" defined and tracked?</li>
+<li>Final product name.</li>
+</ul>
+
+</main>
+</body>
+</html>
